@@ -55,6 +55,9 @@ body{background:var(--sea);color:var(--ink);font-family:var(--ko);
 .rep{margin-top:10px;padding:10px 12px;border-radius:14px;background:var(--sea);border:2px dashed var(--sea-deep)}
 .rep small{display:block;font-size:12px;color:var(--ink-soft)}
 .rep b{font-family:var(--target);font-size:19px}
+.kana{font-family:var(--target);font-size:13px;color:var(--ink-soft);margin-top:2px;letter-spacing:.02em}
+.end-card{align-self:center;background:var(--paper);border-radius:16px;padding:14px 18px;text-align:center;font-size:14px;line-height:1.7;max-width:90%}
+.end-card b{font-family:var(--title);font-weight:400;font-size:20px;display:block;margin-bottom:2px}
 .thinking{align-self:flex-start;color:var(--ink-soft);font-size:14px;padding:4px 6px}
 /* 누르면 다시 듣기 */
 .tap{cursor:pointer;border-radius:10px;transition:background .15s}
@@ -261,6 +264,14 @@ button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touc
       </select></label>
     <label class="check"><input type="checkbox" id="s_recall"> 떠올리기 도전: 한국어로 말하면 먼저 배울 언어로 해 보게 하기</label>
 
+    <h3>음성 인식</h3>
+    <label class="field">내 말 알아듣는 방법
+      <select id="s_stt">
+        <option value="auto">AI 받아쓰기 (정확, 한국어·배울 언어 자동 구분)</option>
+        <option value="browser">크롬 인식 (무료, 한 번에 한 언어만)</option>
+      </select></label>
+    <p class="hint">AI 받아쓰기는 ChatGPT·Gemini 키로만 돼요 (Claude는 크롬 인식). ChatGPT 기준 말한 1분에 약 4원.</p>
+
     <h3>핸즈프리</h3>
     <label class="check"><input type="checkbox" id="s_hfKo"> 한국어 뜻도 소리로 읽어 주기</label>
     <label class="field">따라 하기 전에 한국어 뜻 먼저 들려주기
@@ -345,7 +356,7 @@ var DEFAULT_SETTINGS = {
   who: '성인', age: '', lang: '영어', level: '완전 처음', likes: '',
   name: 'Emma', persona: '차분하고 다정함', repeat: '보통', minutes: 15,
   rate: 0.88, voice: '', showKo: true, soundFirst: true,
-  hfKo: true, mediaKeys: true, micMode: 'auto', repeatKo: 'hf',
+  hfKo: true, mediaKeys: true, micMode: 'auto', repeatKo: 'hf', stt: 'auto',
   shadowCheck: true, koTiming: 'delay', recall: false, lockAfter: false,
   provider: 'gemini', key: '', model: ''
 };
@@ -502,12 +513,12 @@ function buildSystemPrompt() {
   p += '6. 어떤 대답이든 괜찮아. 한 단어여도, 틀려도. 칭찬은 한 단어로. 점수·문법 설명·발음 지적은 하지 마.\n';
   p += '7. 내 수준과 좋아하는 것에 맞춰 말해. 이야깃거리가 떨어질 때만 좋아하는 것을 꺼내.\n';
   p += '8. 내가 ' + L + '로 대답하기 시작하면 따라 말하기와 쉬운 표현 도움을 조금씩 줄여.\n';
-  p += '9. 내가 [끝내기]라고 하면 오늘 같이 쓴 문장을 3개까지 say에 정리해 주고(이때만 3문장까지 괜찮아), ko에 "하나를 아래 칸에 써 볼래?"라고 해.\n';
-  p += '   내가 [끝내기-말하기]라고 하면 똑같이 정리하되, ko에 "하나를 소리 내서 말해 볼래?"라고 하고 그중 하나를 repeat에 넣어.\n';
+  p += '9. 내가 [끝내기]라고 하면 오늘 대화를 마치는 거야. 오늘 같이 쓴 ' + L + ' 문장을 3개까지 say에 정리하고(이때만 3문장까지 괜찮아), ko에 그 뜻과 "오늘 수고했어, 또 만나자" 같은 짧은 인사를 넣어. repeat는 비우고 질문은 하지 마.\n';
   p += '10. 사람인 척하지 마. 물어보면 "언어 연습을 돕는 AI 친구"라고 해. 주소·학교·연락처·비밀번호는 묻지 마.\n';
   p += '11. 내가 [쓰기]라고 표시해서 보낸 문장은 글로 써 본 거야. 맞으면 한 단어 칭찬만. 틀린 곳이 있으면 자연스럽게 고친 문장을 repeat에 넣어 줘(설명 없이).\n';
   p += '11-1. 내가 [따라 말함]이라고 보낸 건 네 repeat 문장을 소리 내서 따라 한 거야. 칭찬은 앱이 이미 했으니 하지 말고, 그 내용에 이어서 짧은 반응이나 쉬운 질문 하나로 대화를 계속해.\n';
   p += '12. 음성 인식으로 받은 말이라 철자가 이상하거나 엉뚱한 단어가 섞일 수 있어. 뜻이 통하게 너그럽게 알아들어.\n';
+  p += '    인식이 언어를 잘못 고를 때도 있어: ' + L + '를 말했는데 한글 발음으로 적히거나(예: "오늘와 츠카레타" = 今日は疲れた), 한국어를 말했는데 엉뚱한 ' + L + ' 글자로 적힐 수 있어. 그럴 땐 내가 하려던 말을 짐작해서 대답해.\n';
   if (hf.on) {
     p += '13. 지금 나는 운전 중이거나 손을 쓸 수 없어서 화면을 못 봐. 질문은 예/아니오나 한두 단어로 답할 수 있게 쉽게 해. 글로 쓰라고 하지 마. 장소·운전 상황을 캐묻지 마.\n';
   }
@@ -527,6 +538,9 @@ function buildSystemPrompt() {
   p += '\n[대답 형식]\n';
   p += '반드시 JSON 객체 하나만 보내. 다른 글자나 ``` 표시는 넣지 마.\n';
   p += 'repeat가 있으면 repeat_ko(자연스러운 한국어 뜻)를 반드시 채워. 나는 뜻을 먼저 듣고 따라 해.\n';
+  if (L === '일본어') {
+    p += '일본어라서 읽는 법도 함께 줘: "say_kana"에 say의 히라가나 읽기, "repeat_kana"에 repeat의 히라가나 읽기 (한자를 모두 히라가나로, 문장부호는 그대로).\n';
+  }
   p += '{"say": "' + L + ' 문장", "ko": "say의 한국어 뜻", "repeat": "따라 말할 짧은 ' + L + ' 문장, 없으면 빈 문자열", "repeat_ko": "repeat의 한국어 뜻, 없으면 빈 문자열", "challenge": false}\n';
   return p;
 }
@@ -536,7 +550,10 @@ function buildSystemPrompt() {
 var CONTEXT_SIZE = 40;   // AI에게 보내는 최근 메시지 수 (그 이전은 '기억'이 대신함)
 
 function aiObj(h) {
-  return { say: h.say || '', ko: h.ko || '', repeat: h.repeat || '', repeat_ko: h.repeat_ko || '', challenge: !!h.challenge };
+  var o = { say: h.say || '', ko: h.ko || '', repeat: h.repeat || '', repeat_ko: h.repeat_ko || '', challenge: !!h.challenge };
+  if (h.say_kana) o.say_kana = h.say_kana;
+  if (h.repeat_kana) o.repeat_kana = h.repeat_kana;
+  return o;
 }
 
 // AI에게 보낼 대화 만들기
@@ -730,11 +747,12 @@ function parseReply(text) {
     return {
       say: String(obj.say || ''), ko: String(obj.ko || ''),
       repeat: String(obj.repeat || ''), repeat_ko: String(obj.repeat_ko || ''),
-      challenge: obj.challenge === true || obj.challenge === 'true'
+      challenge: obj.challenge === true || obj.challenge === 'true',
+      say_kana: String(obj.say_kana || ''), repeat_kana: String(obj.repeat_kana || '')
     };
   } catch (e) {
     console.log('[AI] JSON 정리 실패, 글 그대로 사용:', e.message);
-    return { say: raw.replace(/```json|```/g, '').trim(), ko: '', repeat: '', repeat_ko: '', challenge: false };
+    return { say: raw.replace(/```json|```/g, '').trim(), ko: '', repeat: '', repeat_ko: '', challenge: false, say_kana: '', repeat_kana: '' };
   }
 }
 
@@ -1032,6 +1050,12 @@ function bubbleFor(item, waiting) {
   say.className = 'say';
   say.textContent = item.say || (item.challenge ? '🧠 ' + item.ko : '');
   div.appendChild(say);
+  if (item.say && item.say_kana && item.say_kana !== item.say) {   // 일본어 읽는 법
+    var sk = document.createElement('div');
+    sk.className = 'kana';
+    sk.textContent = item.say_kana;
+    div.appendChild(sk);
+  }
   var ko = null, rep = null;
   if (item.ko && item.say) {
     ko = document.createElement('div');
@@ -1048,6 +1072,12 @@ function bubbleFor(item, waiting) {
     var b = document.createElement('b');
     b.textContent = item.repeat;
     rep.appendChild(b);
+    if (item.repeat_kana && item.repeat_kana !== item.repeat) {
+      var rkn = document.createElement('div');
+      rkn.className = 'kana';
+      rkn.textContent = item.repeat_kana;
+      rep.appendChild(rkn);
+    }
     if (item.repeat_ko) {
       var rk = document.createElement('div');
       rk.className = 'ko';
@@ -1104,6 +1134,7 @@ function updateHeader() {
 }
 
 function updateLangToggle() {
+  if (useAiStt()) { $('langToggle').textContent = '🌐 자동 구분'; return; }
   var label = { auto: '자동', ko: '한국어로', target: langInfo().short + '로' }[settings.micMode] || '자동';
   $('langToggle').textContent = label;
 }
@@ -1148,7 +1179,7 @@ function updateTimeLeft() {
 // · 친구가 말하는 동안 (말 사이 쉼은 제외)
 // · 내가 말하는 동안 (마이크가 켜져 있어도 조용하면 제외)
 // · 화면을 보고 있을 때만, 탭 여러 개여도 한 번만
-var TICK_MS = 1000;
+var TICK_MS = 250;   // 0.25초마다 확인 (짧은 말도 놓치지 않게)
 var lastTickAt = Date.now();
 var tickCount = 0;
 var userSpeaking = false;          // 마이크에 말소리가 들어오는 중
@@ -1164,9 +1195,9 @@ function isTalkingNow() {
 
 setInterval(function () {
   var now = Date.now();
-  var elapsed = Math.min(now - lastTickAt, 2000);   // 폰이 잠들었다 깨도 몰아서 더하지 않음
+  var elapsed = Math.min(now - lastTickAt, 500);   // 폰이 잠들었다 깨도 몰아서 더하지 않음
   lastTickAt = now;
-  if (++tickCount % 30 === 0) updateTimeLeft();   // 30초마다 표시 새로 (자정 넘김 등)
+  if (++tickCount % 120 === 0) updateTimeLeft();   // 30초마다 표시 새로 (자정 넘김 등)
   if (!isTalkingNow()) return;
   // 이미 센 시간대(다른 탭이 센 것 포함)는 빼고 새로운 부분만 더함
   var u = getUsage();
@@ -1297,15 +1328,15 @@ function myNotes() {
   return notes.filter(function (n) { return n.lang === settings.lang; });
 }
 
-function addNote(text, ko) {
+function addNote(text, ko, kana) {
   if (!text) return;
   for (var i = 0; i < notes.length; i++) {
     if (notes[i].lang === settings.lang && notes[i].text.toLowerCase() === text.toLowerCase()) {   // 같은 문장은 한 번만
-      if (!notes[i].ko && ko) { notes[i].ko = ko; save('friend_notes', notes); }
+      if ((!notes[i].ko && ko) || (!notes[i].kana && kana)) { notes[i].ko = notes[i].ko || ko; notes[i].kana = notes[i].kana || kana || ''; save('friend_notes', notes); }
       return;
     }
   }
-  notes.push({ text: text, ko: ko || '', date: todayStr(), box: 1, due: dayNum(), lang: settings.lang });
+  notes.push({ text: text, ko: ko || '', kana: kana || '', date: todayStr(), box: 1, due: dayNum(), lang: settings.lang });
   if (notes.length > 200) notes = notes.slice(-200);
   save('friend_notes', notes);
 }
@@ -1386,13 +1417,15 @@ async function send(text, opts) {
   try {
     var reply = await askAI();
     var item = { role: 'ai', say: reply.say, ko: reply.ko, repeat: reply.repeat, repeat_ko: reply.repeat_ko, challenge: reply.challenge && !reply.say, ts: Date.now() };
+    if (reply.say_kana) item.say_kana = reply.say_kana;
+    if (reply.repeat_kana) item.repeat_kana = reply.repeat_kana;
     // 다음에 내가 할 말이 '따라 하기'인지 '떠올리기'인지 기억
     pendingChallenge = !!item.challenge;
-    pendingShadow = (settings.shadowCheck && item.repeat && !item.challenge) ? { text: item.repeat, ko: item.repeat_ko, tries: 0 } : null;
+    pendingShadow = (settings.shadowCheck && item.repeat && !item.challenge) ? { text: item.repeat, ko: item.repeat_ko, kana: item.repeat_kana || '', tries: 0 } : null;
     chatLog.push(item);
     if (chatLog.length > 300) chatLog = chatLog.slice(-300);   // 기기 저장 공간 보호
     save('friend_history', chatLog);
-    if (item.repeat) addNote(item.repeat, item.repeat_ko);
+    if (item.repeat) addNote(item.repeat, item.repeat_ko, item.repeat_kana);
     // 대화가 쌓이면 기억 정리 (끝내기는 바로)
     maybeSummarize(/^\[끝내기/.test(text));
     think.remove();
@@ -1405,7 +1438,7 @@ async function send(text, opts) {
     speakReply(item, function () {
       bubble.classList.remove('waiting');
       scrollDown();
-      afterSpeaking();
+      if (opts.after) opts.after(); else afterSpeaking();
     });
   } catch (e) {
     console.log('[AI] 오류:', e);
@@ -1488,7 +1521,7 @@ function runCommand(cmd) {
     pauseHandsFree();
     speakKo(hf.on ? '쉬고 있을게. 다시 하려면 버튼을 눌러.' : '알겠어.');
   } else if (cmd === 'end') {
-    send(hf.on ? '[끝내기-말하기]' : '[끝내기]', { hidden: true });
+    endSession();
   } else if (cmd === 'quiz') {
     startQuiz();
   } else if (cmd === 'toKo') {
@@ -1502,6 +1535,53 @@ function runCommand(cmd) {
     updateLangToggle();
     speakKo(settings.lang + '로 들을게.', afterSpeaking);
   }
+}
+
+// ---------- 11-1. 오늘 끝내기 ----------
+// 친구가 오늘 문장 정리 + 인사 → 마이크·핸즈프리 끄기 → 요약 카드 → 기억 정리
+var ending = false;
+async function endSession() {
+  if (ending) return;
+  if (busy) { addSys('친구가 대답하는 중이에요. 대답이 끝나면 다시 눌러 주세요.'); return; }
+  var talked = chatLog.some(function (h) { return h.role === 'user' && !h.hidden; });
+  if (!talked) {
+    if (hf.on) {   // 핸즈프리에서 "끝" → 대화가 없어도 끄기 (멈춘 채로 두지 않음)
+      stopListening();
+      speakKo('알겠어, 오늘은 여기까지. 또 만나자.', function () { stopHandsFree(); });
+    } else {
+      addSys('오늘은 아직 대화하지 않았어요.');
+    }
+    return;
+  }
+  ending = true;
+  console.log('[끝내기] 시작');
+  stopListening();
+  quiz = null;
+  pendingListen = null;
+  var ok = await send('[끝내기]', { hidden: true, after: finishSession });
+  if (!ok) finishSession();   // AI가 대답 못 해도 끝내기는 진행
+}
+
+function finishSession() {
+  resetPractice();
+  stopListening();
+  if (hf.on) stopHandsFree();
+  // 오늘 요약 카드
+  var today = todayStr();
+  var newNotes = myNotes().filter(function (n) { return n.date === today; }).length;
+  var card = document.createElement('div');
+  card.className = 'end-card';
+  var title = document.createElement('b');
+  title.textContent = '🌙 오늘 대화 끝';
+  card.appendChild(title);
+  card.appendChild(document.createTextNode('대화 ' + fmtTime(getUsage().seconds) + (newNotes ? ' · 새 문장 ' + newNotes + '개 📒' : '')));
+  card.appendChild(document.createElement('br'));
+  card.appendChild(document.createTextNode('다시 이야기하려면 마이크를 누르세요.'));
+  chatEl.appendChild(card);
+  scrollDown();
+  maybeSummarize(true);
+  ending = false;
+  console.log('[끝내기] 완료');
 }
 
 // ---------- 12. 듣기 (음성 인식) ----------
@@ -1531,16 +1611,250 @@ function isInsecure() { return window.isSecureContext === false; }
 var INSECURE_MSG = '지금 주소(' + location.protocol + '//)에서는 크롬이 마이크를 막아요. https:// 주소로 열어야 말하기가 돼요. 글로 쓰기는 지금도 돼요.';
 
 // 내가 버튼으로 멈출 때: stop()은 지금까지 말한 걸 살려서 보내 줌 (abort는 버림)
+// 듣기를 마치고 지금까지 말한 걸 보냄
 function finishListening() {
+  if (ai.active) { aiStop(false); return; }
   if (recog && (listening || recogStarting)) {
     try { recog.stop(); } catch (e) {}
   }
 }
 
+// 듣기를 취소 (들은 말 버림)
 function stopListening() {
+  if (ai.active) { aiStop(true); return; }
   if (recog && (listening || recogStarting)) {
     try { recog.abort(); } catch (e) {}
   }
+}
+
+// ===== AI 받아쓰기: 녹음 → AI가 받아 적기 (한국어·배울 언어 자동 구분) =====
+var ai = { active: false, rec: null, stream: null, ctx: null, timer: null, chunks: [], mime: '',
+           spoke: false, stopping: false, cancelled: false, startAt: 0, lastLoudAt: 0, floor: 0, holdUsed: false };
+var aiSttBroken = false;      // AI 받아쓰기가 계속 실패하면 이번엔 크롬 인식으로
+var transcribing = false;     // 받아 적는 중
+
+function useAiStt() {
+  if (settings.stt === 'browser' || aiSttBroken) return false;
+  if (settings.provider !== 'openai' && settings.provider !== 'gemini') return false;
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder &&
+            (window.AudioContext || window.webkitAudioContext));
+}
+
+function pickMime() {
+  var list = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  for (var i = 0; i < list.length; i++) {
+    try { if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(list[i])) return list[i]; } catch (e) {}
+  }
+  return '';
+}
+
+async function listenAI() {
+  ai = { active: true, rec: null, stream: null, ctx: null, timer: null, chunks: [], mime: pickMime(),
+         spoke: false, stopping: false, cancelled: false, startAt: 0, lastLoudAt: 0, floor: 0, holdUsed: false };
+  var me = ai;
+  recogStarting = true;
+  speechEventsWork = true;
+  try {
+    me.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) {
+    recogStarting = false;
+    me.active = false;
+    console.log('[받아쓰기] 마이크 열기 실패:', e && e.name);
+    onNoResult(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'not-allowed' : 'audio-capture');
+    return;
+  }
+  if (me.cancelled || ai !== me) { releaseAi(me); recogStarting = false; return; }   // 여는 사이에 취소됨
+  try {
+    me.rec = me.mime ? new MediaRecorder(me.stream, { mimeType: me.mime }) : new MediaRecorder(me.stream);
+    me.rec.ondataavailable = function (e) { if (e.data && e.data.size) me.chunks.push(e.data); };
+    me.rec.onstop = function () { onAiRecStop(me); };
+    me.rec.start(250);
+    // 말소리 감지 (조용하면 자동으로 끝)
+    var AC = window.AudioContext || window.webkitAudioContext;
+    me.ctx = new AC();
+    var src = me.ctx.createMediaStreamSource(me.stream);
+    var an = me.ctx.createAnalyser();
+    an.fftSize = 1024;
+    src.connect(an);
+    var buf = new Uint8Array(an.fftSize);
+    me.startAt = Date.now();
+    me.timer = setInterval(function () { aiVadTick(me, an, buf); }, 50);
+  } catch (e) {
+    console.log('[받아쓰기] 녹음 시작 실패:', e);
+    releaseAi(me);
+    recogStarting = false;
+    aiSttBroken = true;
+    addSys('이 기기에선 AI 받아쓰기를 쓸 수 없어서 크롬 인식으로 바꿀게요.');
+    listen();
+    return;
+  }
+  recogStarting = false;
+  listening = true;
+  $('mic').classList.add('on');
+  $('mic').textContent = hold.active ? '👂 듣는 중 (손 떼면 보내기)' : '👂 듣는 중 (누르면 멈춤)';
+  setOrb('listening');
+  console.log('[받아쓰기] 녹음 시작', me.mime || '(기본 형식)');
+}
+
+// 50ms마다 소리 크기 확인
+function aiVadTick(me, an, buf) {
+  if (me.stopping) return;
+  an.getByteTimeDomainData(buf);
+  var sum = 0;
+  for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
+  var rms = Math.sqrt(sum / buf.length);
+  var now = Date.now(), t = now - me.startAt;
+  if (t < 300) { me.floor = Math.max(me.floor, rms); return; }   // 처음 0.3초: 주변 소음 재기
+  var loud = rms > Math.max(0.02, me.floor * 2.5);
+  if (loud) {
+    me.spoke = true;
+    me.lastLoudAt = now;
+    hold.lastHeardAt = now;
+    userSpeaking = true;
+  } else {
+    userSpeaking = false;
+  }
+  if (hold.pressed || hold.active) {
+    me.holdUsed = true;
+    // 누르고 있는 동안은 계속 녹음 (안전장치: 60초 / 15초 조용)
+    if (t > HOLD_MAX_MS || now - Math.max(me.lastLoudAt, me.startAt) > HOLD_SILENCE_MS) {
+      console.log('[받아쓰기] 너무 오래 누름/조용함 → 자동으로 끝');
+      hold.pressed = false;
+      aiStop(false);
+    }
+    return;
+  }
+  if (!me.spoke && t > 8000) { aiStop(false); return; }               // 8초 동안 아무 말 없음
+  if (me.spoke && now - me.lastLoudAt > 1200) { aiStop(false); return; } // 말 끝나고 1.2초 조용
+  if (t > 30000) aiStop(false);                                         // 최대 30초
+}
+
+function aiStop(cancel) {
+  var me = ai;
+  if (!me.active || me.stopping) { if (cancel) me.cancelled = true; return; }
+  me.stopping = true;
+  if (cancel) me.cancelled = true;
+  if (me.timer) clearInterval(me.timer);
+  userSpeaking = false;
+  if (!me.rec) { releaseAi(me); recogStarting = false; return; }   // 아직 녹음 전
+  try { me.rec.stop(); } catch (e) { onAiRecStop(me); }
+}
+
+function releaseAi(me) {
+  try { if (me.stream) me.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+  try { if (me.ctx) me.ctx.close(); } catch (e) {}
+  me.active = false;
+}
+
+async function onAiRecStop(me) {
+  if (me.done) return;
+  me.done = true;
+  releaseAi(me);
+  listening = false;
+  userSpeaking = false;
+  var wasHold = me.holdUsed || hold.active;
+  if (me.cancelled) {
+    $('mic').classList.remove('on');
+    $('mic').textContent = '🎤 눌러서 말하기';
+    if (wasHold) { hold.active = false; hold.buffer = []; }
+    onNoResult('aborted');
+    return;
+  }
+  if (!me.spoke) {
+    $('mic').classList.remove('on');
+    $('mic').textContent = '🎤 눌러서 말하기';
+    if (wasHold) { hold.active = false; hold.buffer = []; }
+    onNoResult('no-speech');
+    return;
+  }
+  transcribing = true;
+  $('mic').textContent = '📝 받아 적는 중…';
+  setOrb('thinking');
+  var text = '';
+  try {
+    var blob = new Blob(me.chunks, { type: (me.mime || 'audio/webm').split(';')[0] });
+    text = await transcribe(blob);
+  } catch (e) {
+    transcribing = false;
+    $('mic').classList.remove('on');
+    $('mic').textContent = '🎤 눌러서 말하기';
+    if (wasHold) { hold.active = false; hold.buffer = []; }
+    console.log('[받아쓰기] 실패:', e && e.message, e && e.status);
+    if (e && (e.status === 401 || e.status === 403 || e.status === 404 || e.status === 400)) {
+      aiSttBroken = true;   // 키·모델 문제 → 이번엔 크롬 인식으로
+      addSys('AI 받아쓰기를 쓸 수 없어서(' + (e.status || '') + ') 크롬 인식으로 바꿨어요. 다시 말해 주세요.');
+      if (hf.on && !hf.paused) setTimeout(function () { listen(); }, 300);
+      return;
+    }
+    onNoResult('network');
+    return;
+  }
+  transcribing = false;
+  $('mic').classList.remove('on');
+  $('mic').textContent = '🎤 눌러서 말하기';
+  text = String(text || '').trim();
+  console.log('[받아쓰기] 받아 적은 말:', text);
+  if (!text) {
+    if (wasHold) { hold.active = false; hold.buffer = []; }
+    onNoResult('no-speech');
+    return;
+  }
+  if (wasHold) { hold.active = true; hold.buffer = [text]; finishHold(); return; }
+  if (pendingListen) {
+    var cb = pendingListen.cb;
+    pendingListen = null;
+    hf.silent = 0;
+    cb(text);
+  } else {
+    handleSpoken(text);
+  }
+}
+
+// 녹음 파일 → 글
+async function transcribe(blob) {
+  var L = settings.lang;
+  if (settings.provider === 'openai') {
+    var ext = /mp4/.test(blob.type) ? 'm4a' : (/ogg/.test(blob.type) ? 'ogg' : 'webm');
+    var models = ['gpt-4o-mini-transcribe', 'whisper-1'];
+    var lastErr = null;
+    for (var i = 0; i < models.length; i++) {
+      var fd = new FormData();
+      fd.append('file', blob, 'speech.' + ext);
+      fd.append('model', models[i]);
+      fd.append('prompt', '한국어 또는 ' + L + '로 말해요. 들린 그대로, 그 언어의 글자로 받아 적으세요.');
+      var res = await fetchT('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + settings.key }, body: fd
+      }, 20000);
+      var data = await res.json().catch(function () { return {}; });
+      if (res.ok) return String(data.text || '');
+      lastErr = makeError(res.status, data.error && data.error.message);
+      if (res.status !== 404 && res.status !== 400) throw lastErr;   // 모델 없음일 때만 다음 모델로
+    }
+    throw lastErr;
+  }
+  // Gemini: 소리를 직접 듣고 받아 적기
+  var b64 = await new Promise(function (resolve, reject) {
+    var r = new FileReader();
+    r.onload = function () { resolve(String(r.result).split(',')[1] || ''); };
+    r.onerror = function () { reject(new Error('녹음 읽기 실패')); };
+    r.readAsDataURL(blob);
+  });
+  var model = settings.model || DEFAULT_MODEL.gemini;
+  var gres = await fetchT('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': settings.key },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [
+        { inline_data: { mime_type: blob.type || 'audio/webm', data: b64 } },
+        { text: '이 녹음을 들린 그대로 받아 적어. 한국어면 한글로, ' + L + '면 ' + L + ' 글자로. 고치거나 번역하지 말고 받아 적은 글만 출력해. 말소리가 없으면 아무것도 출력하지 마.' }
+      ] }],
+      generationConfig: { temperature: 0 }
+    })
+  }, 20000);
+  var gdata = await gres.json().catch(function () { return {}; });
+  if (!gres.ok) throw makeError(gres.status, gdata.error && gdata.error.message);
+  var parts = gdata.candidates && gdata.candidates[0] && gdata.candidates[0].content && gdata.candidates[0].content.parts;
+  return parts ? parts.map(function (x) { return x.text || ''; }).join('').trim() : '';
 }
 
 function listen(holdRestart) {
@@ -1549,13 +1863,22 @@ function listen(holdRestart) {
     if (hf.on) stopHandsFree();
     return;
   }
+  if (useAiStt() && !holdRestart) {
+    if (busy && !hf.on) { addSys('친구가 생각 중이에요. 대답이 오면 말해 주세요.'); return; }
+    if (busy || listening || recogStarting || transcribing || ai.active) return;
+    if (isOverTime()) { updateTimeLeft(); if (hf.on) speakKo('오늘 시간이 다 됐어. 내일 또 하자.', function () { stopHandsFree(); }); return; }
+    stopSpeaking();
+    listenLangKey = chooseListenLang();
+    listenAI();
+    return;
+  }
   if (!Recog) {
     addSys('이 브라우저는 음성 인식이 안 돼요. 크롬(또는 엣지)에서 열거나, 아래 칸에 글로 써 주세요.');
     if (hf.on) stopHandsFree();
     return;
   }
   if (busy && !hf.on) { addSys('친구가 생각 중이에요. 대답이 오면 말해 주세요.'); return; }
-  if (busy || listening || recogStarting) return;   // 마이크는 절대 두 개 켜지 않음
+  if (busy || listening || recogStarting || transcribing) return;   // 마이크는 절대 두 개 켜지 않음
   if (isOverTime()) {
     updateTimeLeft();
     if (hf.on) speakKo('오늘 시간이 다 됐어. 내일 또 하자.', function () { stopHandsFree(); });
@@ -1658,7 +1981,7 @@ function handleSpoken(text) {
   if (recentUserLangs.length > 5) recentUserLangs.shift();
 
   // 따라 할 문장을 말한 거면 명령어("Wait!" 등)보다 따라 하기가 먼저
-  if (pendingShadow && similarity(text, pendingShadow.text) >= passLine()) {
+  if (pendingShadow && matchScore(text, pendingShadow.text, pendingShadow.kana) >= passLine()) {
     checkShadow(text);
     return;
   }
@@ -1711,6 +2034,13 @@ function similarity(a, b) {
   return 1 - prev[b.length] / Math.max(a.length, b.length);
 }
 
+// 정답과 비교: 한자로 적히든 가나로 적히든 맞게 (읽기가 있으면 둘 중 더 비슷한 쪽)
+function matchScore(said, text, kana) {
+  var a = similarity(said, text);
+  var b = kana ? similarity(said, kana) : 0;
+  return Math.max(a, b);
+}
+
 // 통과 기준: 일본어·중국어는 한자/가나 표기 차이가 있어 너그럽게
 function passLine() {
   var c = langInfo().code;
@@ -1737,7 +2067,7 @@ function tailChunk(text) {
 
 function checkShadow(said) {
   var target = pendingShadow;
-  var score = similarity(said, target.text);
+  var score = matchScore(said, target.text, target.kana);
   var code = langInfo().code;
   console.log('[따라 하기] 비교:', said, '↔', target.text, '=', score.toFixed(2));
 
@@ -1828,14 +2158,14 @@ function quizAsk() {
 function quizAnswer(said) {
   if (!quiz) return;
   // 정답이 명령어와 같을 수 있으니("Wait!") 맞았으면 명령어로 보지 않음
-  var isRight = !!said && similarity(said, quiz.items[quiz.i].text) >= passLine();
+  var isRight = !!said && matchScore(said, quiz.items[quiz.i].text, quiz.items[quiz.i].kana) >= passLine();
   var cmd = (said && !isRight) ? detectCommand(said) : null;
   if (cmd === 'pause') { quiz = null; runCommand('pause'); return; }
   if (cmd === 'end') { quiz = null; addSys('퀴즈 그만'); speakKo('퀴즈 그만할게.', afterSpeaking); return; }
 
   var n = quiz.items[quiz.i];
   var code = langInfo().code;
-  var ok = !!said && similarity(said, n.text) >= passLine();
+  var ok = !!said && matchScore(said, n.text, n.kana) >= passLine();
   updateBox(n, ok);
   quiz.i++;
   var line = addSys((ok ? '✓ ' : '→ ') + n.text + (said ? '  (들린 말: ' + said + ')' : ''));
@@ -2150,6 +2480,7 @@ function openSheet() {
   $('s_soundFirst').checked = settings.soundFirst;
   $('s_hfKo').checked = settings.hfKo;
   $('s_repeatKo').value = settings.repeatKo;
+  $('s_stt').value = settings.stt;
   $('s_shadow').checked = settings.shadowCheck;
   $('s_koTiming').value = settings.koTiming;
   $('s_recall').checked = settings.recall;
@@ -2191,6 +2522,8 @@ function saveSheet() {
   settings.soundFirst = $('s_soundFirst').checked;
   settings.hfKo = $('s_hfKo').checked;
   settings.repeatKo = $('s_repeatKo').value;
+  settings.stt = $('s_stt').value;
+  aiSttBroken = false;
   settings.shadowCheck = $('s_shadow').checked;
   settings.koTiming = $('s_koTiming').value;
   settings.recall = $('s_recall').checked;
@@ -2293,6 +2626,7 @@ var HOLD_SILENCE_MS = 15000;  // 15초 동안 아무 말도 안 들리면 자동
 $('mic').addEventListener('pointerdown', function (e) {
   if ($('mic').disabled) return;
   e.preventDefault();
+  if (transcribing) return;   // 받아 적는 중
   if ((listening || recogStarting) && !hold.active) { finishListening(); return; }   // 켜지는 중이어도 '듣는 중'으로   // 듣는 중 탭 → 거기까지 보내기
   hold.pressed = true;
   hold.active = false;
@@ -2316,7 +2650,11 @@ function micRelease() {
   clearTimeout(hold.timer);
   if (!hold.active) return;   // 짧은 탭이었음 → 말 끝나면 알아서 멈춤
   console.log('[듣기] 손 뗌 → 모은 말 보내기');
-  if (listening || recogStarting) {
+  if (ai.active) {
+    aiStop(false);                    // 녹음 끝 → 받아 적은 뒤 finishHold
+  } else if (transcribing) {
+    // 이미 받아 적는 중 → 끝나면 처리됨
+  } else if (listening || recogStarting) {
     // 켜져 있거나 막 켜지는 중인 마이크도 끔 → 마지막 조각 받고 onend에서 finishHold
     try { recog.stop(); } catch (e) { finishHold(); }
   } else {
@@ -2367,6 +2705,7 @@ $('mic').addEventListener('click', function (e) {
   if (listening) finishListening(); else listen();
 });
 $('langToggle').addEventListener('click', function () {
+  if (useAiStt()) { addSys('AI 받아쓰기는 한국어와 ' + settings.lang + '를 알아서 구분해요. 그냥 말하면 돼요.'); return; }
   var order = ['auto', 'ko', 'target'];
   var idx = order.indexOf(settings.micMode);
   settings.micMode = order[(idx + 1) % order.length];
@@ -2391,10 +2730,7 @@ $('sendBtn').addEventListener('click', function () {
 $('textInput').addEventListener('keydown', function (e) {
   if (e.key === 'Enter' && !e.isComposing) $('sendBtn').click();   // 한글 조합 중 Enter 두 번 보내기 방지
 });
-$('endBtn').addEventListener('click', function () {
-  if (!chatLog.length) return;
-  send('[끝내기]', { hidden: true });
-});
+$('endBtn').addEventListener('click', function () { endSession(); });
 
 $('hfBtn').addEventListener('click', startHandsFree);
 $('driveExit').addEventListener('click', stopHandsFree);
@@ -2403,7 +2739,7 @@ $('orb').addEventListener('click', toggleHandsFreePause);
 // 디버깅용: 브라우저 콘솔에서 TalkFriend.xxx 로 확인 가능
 window.TalkFriend = {
   parseReply: parseReply, detectCommand: detectCommand, buildSystemPrompt: buildSystemPrompt,
-  similarity: similarity, startQuiz: startQuiz, splitSegments: splitSegments, joinChunks: joinChunks,
+  similarity: similarity, matchScore: matchScore, useAiStt: useAiStt, endSession: endSession, startQuiz: startQuiz, splitSegments: splitSegments, joinChunks: joinChunks,
   apiMessages: apiMessages, memory: function () { return memory; }, maybeSummarize: maybeSummarize, notes: function () { return notes; },
   chooseListenLang: chooseListenLang, state: function () {
     return { hf: hf, busy: busy, listening: listening, micMode: settings.micMode, log: chatLog.length, notes: notes.length, rate: settings.rate, pendingShadow: pendingShadow, quiz: quiz };
@@ -2411,7 +2747,7 @@ window.TalkFriend = {
 };
 
 // ---------- 16. 시작 ----------
-console.log('[시작] AI 회화 친구 v0.6.2 열림 / 주소:', location.protocol, '/ 보안 주소:', !isInsecure());
+console.log('[시작] AI 회화 친구 v0.7 열림 / 주소:', location.protocol, '/ 보안 주소:', !isInsecure());
 fillLangSelect();
 updateHeader();
 updateTimeLeft();

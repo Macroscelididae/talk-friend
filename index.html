@@ -81,6 +81,18 @@ body{background:var(--sea);color:var(--ink);font-family:var(--ko);
   padding:0 12px;font-family:var(--title);font-size:16px;cursor:pointer;line-height:1.1}
 .end-btn{border:0;background:transparent;color:var(--ink);font-size:14px;text-decoration:underline;cursor:pointer}
 .typing{display:flex;gap:8px;margin-top:10px}
+.msg-row{display:flex;align-items:flex-end;gap:6px;width:100%}
+.me-row{justify-content:flex-end}
+.ai-row{justify-content:flex-start}
+.msg-row .bubble{align-self:auto;max-width:80%}
+.time{font-size:11px;color:var(--ink-soft);white-space:nowrap;flex:none;padding-bottom:3px}
+.day-divider{align-self:center;font-size:12px;color:var(--ink-soft);background:var(--paper);
+  padding:4px 12px;border-radius:999px;margin:8px 0 2px}
+.field textarea{width:100%;min-height:150px;border:2px solid var(--line);border-radius:12px;padding:9px 10px;
+  font-size:14px;line-height:1.5;font-family:var(--ko);background:var(--sea);color:var(--ink);resize:vertical}
+.small-btns{display:flex;gap:8px;margin-top:6px}
+.small-btns button{flex:1;border:2px solid var(--line);background:transparent;color:var(--ink);border-radius:12px;
+  padding:9px 6px;font-size:14px;font-family:var(--ko);cursor:pointer}
 .typing input{flex:1;min-width:0;border:2px solid var(--line);border-radius:14px;padding:10px 12px;font-size:16px;
   font-family:var(--ko);background:var(--paper);color:var(--ink)}
 .typing button{border:0;border-radius:14px;padding:0 16px;background:var(--ink);color:var(--paper);font-size:15px;cursor:pointer}
@@ -251,8 +263,23 @@ button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touc
 
     <h3>핸즈프리</h3>
     <label class="check"><input type="checkbox" id="s_hfKo"> 한국어 뜻도 소리로 읽어 주기</label>
+    <label class="field">따라 하기 전에 한국어 뜻 먼저 들려주기
+      <select id="s_repeatKo">
+        <option value="hf">핸즈프리에서만</option>
+        <option value="always">항상</option>
+        <option value="never">안 함</option>
+      </select></label>
     <label class="check"><input type="checkbox" id="s_mediaKeys"> 이어폰·차량 버튼으로 멈추기/이어 하기</label>
     <p class="hint">휴대폰 화면이 꺼지면 듣기가 멈춰요. 핸즈프리 중에는 화면을 켜 둔 채로 거치대에 두세요.</p>
+
+    <h3>친구의 기억</h3>
+    <p class="hint">친구가 대화하면서 정리해 둔 내용이에요. 다음 대화 때 이걸 보고 이야기를 이어 가요. 틀린 건 고치거나 지울 수 있어요. (이 기기에만 저장)</p>
+    <label class="field"><span id="memInfo">아직 정리된 기억이 없어요.</span>
+      <textarea id="s_memory" placeholder="대화를 8번쯤 하면 자동으로 채워져요."></textarea></label>
+    <div class="small-btns">
+      <button id="memNow">지금 정리하기</button>
+      <button id="memClear">기억 지우기</button>
+    </div>
 
     <h3>AI 연결</h3>
     <p class="hint">키는 이 기기에만 저장돼요. 이 파일을 남에게 줘도 키는 같이 가지 않아요. 결제 계정에 한 달 사용 한도를 꼭 걸어 두세요.</p>
@@ -268,7 +295,7 @@ button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touc
       <input id="s_model" placeholder=""></label>
 
     <button class="save" id="saveSettings">저장하고 시작하기</button>
-    <button class="danger" id="clearChat">대화 기록 지우기</button>
+    <button class="danger" id="clearChat">대화 기록 지우기 (기억은 남아요)</button>
   </div>
 </div>
 
@@ -318,7 +345,7 @@ var DEFAULT_SETTINGS = {
   who: '성인', age: '', lang: '영어', level: '완전 처음', likes: '',
   name: 'Emma', persona: '차분하고 다정함', repeat: '보통', minutes: 15,
   rate: 0.88, voice: '', showKo: true, soundFirst: true,
-  hfKo: true, mediaKeys: true, micMode: 'auto',
+  hfKo: true, mediaKeys: true, micMode: 'auto', repeatKo: 'hf',
   shadowCheck: true, koTiming: 'delay', recall: false, lockAfter: false,
   provider: 'gemini', key: '', model: ''
 };
@@ -369,11 +396,20 @@ function save(key, value) {
 var settings = Object.assign({}, DEFAULT_SETTINGS, load('friend_settings', {}));
 var chatLog = load('friend_history', []);   // [{role:'user'|'ai', text, say, ko, repeat, repeat_ko, hidden}]
 if (!Array.isArray(chatLog)) chatLog = [];
+// 친구의 기억: 지난 대화 요약 {text, upTo: 여기까지 정리한 시각, updated}
+var memory = load('friend_memory', null);
+if (!memory || typeof memory !== 'object') memory = { text: '', upTo: -1, updated: 0 };
+if (typeof memory.text !== 'string') memory.text = '';
+if (typeof memory.upTo !== 'number') memory.upTo = -1;
 var notes = load('friend_notes', []);       // [{text, ko, date}]
 if (!Array.isArray(notes)) notes = [];
 // 예전 노트에는 복습 단계가 없어서 채워 줌 (box: 1~5단계, due: 다음에 낼 날)
 notes = notes.filter(function (n) { return n && n.text; });
-notes.forEach(function (n) { if (!n.box) { n.box = 1; n.due = 0; } });
+notes.forEach(function (n) {
+  if (!n.box) { n.box = 1; n.due = 0; }
+  // 예전 노트엔 언어가 없음 → 가나가 있으면 일본어, 아니면 지금 언어로
+  if (!n.lang) n.lang = /[\u3040-\u30ff]/.test(n.text) ? '일본어' : (load('friend_settings', {}).lang || '영어');
+});
 
 var busy = false;
 var lastActivity = 0;            // 마지막으로 말하거나 들은 시각 (기록용)
@@ -407,6 +443,32 @@ function touch() { lastActivity = Date.now(); }
 function $(id) { return document.getElementById(id); }
 var chatEl = $('chat');
 
+// ---------- 3-1. 시각 표시 (카톡처럼) ----------
+var SESSION_GAP_MS = 3 * 60 * 60 * 1000;   // 3시간 넘게 쉬면 '새 대화'
+var WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+function fmtClock(ts) {           // 오후 8:12
+  var d = new Date(ts), h = d.getHours(), m = d.getMinutes();
+  return (h < 12 ? '오전 ' : '오후 ') + (h % 12 === 0 ? 12 : h % 12) + ':' + (m < 10 ? '0' : '') + m;
+}
+function fmtDay(ts) {             // 2026년 10월 11일 토요일
+  var d = new Date(ts);
+  return d.getFullYear() + '년 ' + (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + WEEK[d.getDay()] + '요일';
+}
+function fmtStamp(ts) {           // 10월 11일(토) 오후 8:12
+  var d = new Date(ts);
+  return (d.getMonth() + 1) + '월 ' + d.getDate() + '일(' + WEEK[d.getDay()] + ') ' + fmtClock(ts);
+}
+function dayKeyOf(ts) { var d = new Date(ts); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); }
+function fmtGap(ms) {
+  var h = Math.floor(ms / 3600000);
+  if (h < 24) return h + '시간 만';
+  return Math.floor(h / 24) + '일 만';
+}
+function lastMessageTs() {
+  for (var i = chatLog.length - 1; i >= 0; i--) if (chatLog[i].ts) return chatLog[i].ts;
+  return 0;
+}
+
 // ---------- 4. 대화 설정(시스템 지시) 만들기 ----------
 function buildSystemPrompt() {
   var L = settings.lang;
@@ -414,6 +476,7 @@ function buildSystemPrompt() {
   var repeatAmount = { '적게': '가끔만', '보통': '자주(매번은 말고)', '많이': '거의 매번' }[settings.repeat] || '자주(매번은 말고)';
 
   var p = '';
+  p += '[지금] ' + fmtDay(Date.now()) + ' ' + fmtClock(Date.now()) + '\n\n';
   p += '[내 사용설명서]\n';
   p += '- 나는: ' + settings.who + ' · 나이: ' + (settings.age || '모름') + '살\n';
   p += '- 모국어: 한국어\n';
@@ -449,6 +512,13 @@ function buildSystemPrompt() {
     p += '13. 지금 나는 운전 중이거나 손을 쓸 수 없어서 화면을 못 봐. 질문은 예/아니오나 한두 단어로 답할 수 있게 쉽게 해. 글로 쓰라고 하지 마. 장소·운전 상황을 캐묻지 마.\n';
   }
   p += '처음([시작])엔 네가 먼저 짧게 인사하고, 오늘 하루가 어땠는지 하나만 물어봐.\n';
+  p += '[기억 규칙] 아래 [지난 대화 기억](있으면)과 앞의 대화를 보고 이야기를 자연스럽게 이어 가. 예전 이야기는 한 번에 하나만, 억지로 꺼내지 마.\n';
+  p += '  내 말 앞에 [새 대화 · 날짜 · ○일 만] 표시가 있으면 시간이 지나서 다시 만난 거야. 지난 이야기 하나를 짧게 떠올리며 반갑게 대답해.\n';
+  p += '  [다시 만남]은 내가 앱을 다시 켰다는 뜻이야. 네가 먼저 반갑게 인사하고, 지난 이야기 하나를 이어서 쉬운 질문 하나를 해.\n';
+  p += '  지난 네 대답의 "user_repeated": true는 내가 그 repeat 문장을 소리 내서 따라 했다는 뜻이야. 네 대답에는 이 항목을 넣지 마.\n';
+  if (memory.text) {
+    p += '\n[지난 대화 기억] (' + (memory.updated ? fmtStamp(memory.updated) + '에 정리' : '정리됨') + ')\n' + memory.text + '\n';
+  }
 
   if (settings.who === '아이') {
     p += '\n아이와 이야기 중이야. 이름·학교·주소 같은 개인정보는 묻지 말고, 무섭거나 어른 이야기는 하지 마.\n';
@@ -456,23 +526,87 @@ function buildSystemPrompt() {
 
   p += '\n[대답 형식]\n';
   p += '반드시 JSON 객체 하나만 보내. 다른 글자나 ``` 표시는 넣지 마.\n';
+  p += 'repeat가 있으면 repeat_ko(자연스러운 한국어 뜻)를 반드시 채워. 나는 뜻을 먼저 듣고 따라 해.\n';
   p += '{"say": "' + L + ' 문장", "ko": "say의 한국어 뜻", "repeat": "따라 말할 짧은 ' + L + ' 문장, 없으면 빈 문자열", "repeat_ko": "repeat의 한국어 뜻, 없으면 빈 문자열", "challenge": false}\n';
   return p;
 }
 
 // ---------- 5. 대화 AI 부르기 (Gemini / OpenAI / Claude) ----------
 // API에 보낼 대화 기록 (숨긴 시작 메시지 포함, 최근 24개만)
+var CONTEXT_SIZE = 40;   // AI에게 보내는 최근 메시지 수 (그 이전은 '기억'이 대신함)
+
+function aiObj(h) {
+  return { say: h.say || '', ko: h.ko || '', repeat: h.repeat || '', repeat_ko: h.repeat_ko || '', challenge: !!h.challenge };
+}
+
+// AI에게 보낼 대화 만들기
+// · 따라 하기([따라 말함])는 칸을 차지하지 않게 앞 친구 말에 접어 넣음 → 친구 말은 항상 JSON 하나
+// · 3시간 넘게 쉬었다가 한 말 앞엔 [새 대화 · 날짜 · ○일 만] 표시
 function apiMessages() {
   var list = [];
+  var prevTs = 0;
+  // 지금 친구가 대답할 차례의 말(마지막 내 말)은 접지 않음
+  var lastUserIdx = -1;
+  for (var k = chatLog.length - 1; k >= 0; k--) {
+    if (chatLog[k].role === 'user' && !chatLog[k].local) { lastUserIdx = k; break; }
+  }
   for (var i = 0; i < chatLog.length; i++) {
     var h = chatLog[i];
-    if (h.role === 'user' && !h.local) list.push({ role: 'user', content: h.text });
-    if (h.role === 'ai') list.push({ role: 'assistant', content: JSON.stringify({ say: h.say, ko: h.ko, repeat: h.repeat, repeat_ko: h.repeat_ko || '', challenge: !!h.challenge }) });
+    if (h.role === 'user' && h.local) continue;   // 화면 기록용
+    var gapMark = '';
+    if (h.ts && prevTs && h.ts - prevTs >= SESSION_GAP_MS) {
+      gapMark = '[새 대화 · ' + fmtStamp(h.ts) + ' · ' + fmtGap(h.ts - prevTs) + '] ';
+    }
+    if (h.ts) prevTs = h.ts;
+    var last = list[list.length - 1];
+
+    if (h.role === 'user') {
+      var text = String(h.text);
+      if (/^\[따라 말함\]/.test(text) && last && last.role === 'assistant' && !gapMark && i !== lastUserIdx) {
+        last.obj.user_repeated = true;   // 내가 그 문장을 따라 함
+        continue;
+      }
+      if (last && last.role === 'user') last.content += '\n' + gapMark + text;   // 사용자 말 연속이면 합침
+      else list.push({ role: 'user', content: gapMark + text });
+    } else if (h.role === 'ai') {
+      if (last && last.role === 'assistant') {
+        // 접힌 따라 하기 뒤 친구 말 → 앞 말과 하나로 합침
+        var o = last.obj, n = aiObj(h);
+        o.say = (o.say + ' ' + n.say).trim();
+        o.ko = (o.ko + ' ' + n.ko).trim();
+        if (n.repeat) { o.repeat = n.repeat; o.repeat_ko = n.repeat_ko; o.user_repeated = false; }
+        o.challenge = n.challenge;
+      } else {
+        list.push({ role: 'assistant', obj: aiObj(h) });
+      }
+    }
   }
-  list = list.slice(-24);
+  list = list.slice(-CONTEXT_SIZE).map(function (m) {
+    if (m.role === 'assistant') {
+      if (!m.obj.user_repeated) delete m.obj.user_repeated;
+      return { role: 'assistant', content: JSON.stringify(m.obj) };
+    }
+    return { role: 'user', content: m.content };
+  });
   // 첫 메시지는 사용자 쪽이어야 하는 AI가 있어서 맞춰 줌
   while (list.length && list[0].role !== 'user') list.shift();
+  // 안전장치: 마지막은 반드시 내 말 (친구 말로 끝나면 AI가 차례를 헷갈림)
+  if (list.length && list[list.length - 1].role !== 'user') console.log('[AI] 경고: 대화가 친구 말로 끝남');
   return list;
+}
+
+// 응답이 너무 늦으면 포기 (터널 등에서 '생각 중'에 영원히 멈추지 않게)
+function fetchT(url, options, ms) {
+  var ctrl = window.AbortController ? new AbortController() : null;
+  if (ctrl) options.signal = ctrl.signal;
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () {
+      if (ctrl) { try { ctrl.abort(); } catch (e) {} }
+      reject(makeError(0, 'TIMEOUT'));
+    }, ms || 25000);
+    fetch(url, options).then(function (r) { clearTimeout(timer); resolve(r); },
+                             function (e) { clearTimeout(timer); reject(e); });
+  });
 }
 
 function makeError(status, message) {
@@ -482,10 +616,14 @@ function makeError(status, message) {
 }
 
 async function callAI() {
+  return parseReply(await callModel(buildSystemPrompt(), apiMessages(), 400));
+}
+
+// 지시(system)와 대화(msgs)를 보내고 글을 받아 옴 (대화·기억 정리 둘 다 씀)
+async function callModel(system, msgs, maxTokens, timeoutMs) {
+  var limit = timeoutMs || 25000;
   var provider = settings.provider;
   var model = settings.model || DEFAULT_MODEL[provider];
-  var system = buildSystemPrompt();
-  var msgs = apiMessages();
   var res, data, text;
   console.log('[AI] 요청:', provider, model, '/ 메시지', msgs.length + '개');
 
@@ -493,7 +631,7 @@ async function callAI() {
     var contents = msgs.map(function (m) {
       return { role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] };
     });
-    res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+    res = await fetchT('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': settings.key },
       body: JSON.stringify({
@@ -501,7 +639,7 @@ async function callAI() {
         contents: contents,
         generationConfig: { temperature: 0.8, responseMimeType: 'application/json' }
       })
-    });
+    }, limit);
     data = await res.json().catch(function () { return {}; });
     if (!res.ok) throw makeError(res.status, data.error && data.error.message);
     var cand = data.candidates && data.candidates[0];
@@ -522,11 +660,11 @@ async function callAI() {
     else oaBody.temperature = 0.8;
 
     var oaSend = function (body) {
-      return fetch('https://api.openai.com/v1/chat/completions', {
+      return fetchT('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.key },
         body: JSON.stringify(body)
-      });
+      }, limit);
     };
     res = await oaSend(oaBody);
     data = await res.json().catch(function () { return {}; });
@@ -545,7 +683,7 @@ async function callAI() {
     text = data.choices[0].message.content;
 
   } else {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetchT('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -553,8 +691,8 @@ async function callAI() {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
-      body: JSON.stringify({ model: model, max_tokens: 400, system: system, messages: msgs })
-    });
+      body: JSON.stringify({ model: model, max_tokens: maxTokens || 400, system: system, messages: msgs })
+    }, limit);
     data = await res.json().catch(function () { return {}; });
     if (!res.ok) throw makeError(res.status, data.error && data.error.message);
     text = (data.content || []).filter(function (b) { return b.type === 'text'; })
@@ -563,7 +701,7 @@ async function callAI() {
   }
 
   console.log('[AI] 받은 글:', text);
-  return parseReply(text);
+  return text;
 }
 
 // 잠깐 붐비거나(429) 서버 문제(5xx)면 2초 뒤 한 번만 다시 시도
@@ -608,6 +746,7 @@ function friendlyError(e) {
   if (st === 429) return '오늘 쓸 수 있는 양을 넘었거나 너무 빨리 보냈어요. 잠시 뒤에 다시 해 주세요.';
   if (st === 404) return '모델 이름을 찾을 수 없어요. ⚙️ 설정에서 모델 이름을 비워 두거나 바꿔 주세요.';
   if (st === 400) return 'AI가 요청을 받지 않았어요. 모델 이름이나 키 종류를 확인해 주세요. (' + msg.slice(0, 80) + ')';
+  if (msg === 'TIMEOUT' || /abort/i.test(msg)) return '응답이 너무 늦어요. 인터넷 연결을 확인하고 다시 해 주세요.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return '인터넷 연결을 확인해 주세요.';
   return '문제가 생겼어요: ' + msg.slice(0, 120);
 }
@@ -728,9 +867,21 @@ function speakReply(item, onDone) {
   }
   if (item.repeat) {
     parts.push({ text: '따라 해 볼까?', code: 'ko-KR', rate: 1 });
+    // 무슨 뜻인지 알고 따라 하도록, 문장 전에 한국어 뜻 먼저
+    if (item.repeat_ko && repeatMeaningOn()) {
+      parts.push({ text: '"' + item.repeat_ko.replace(/[.。!?！？]+$/, '') + '"라는 뜻이야.', code: 'ko-KR', rate: 1 });
+      parts.push({ pause: 400 });
+    }
     parts.push({ text: item.repeat, code: code, rate: repeatRate() });
   }
   speakQueue(parts, onDone);
+}
+
+// 따라 하기 전에 뜻을 들려줄지 (핸즈프리에서만 / 항상 / 안 함)
+function repeatMeaningOn() {
+  if (settings.repeatKo === 'always') return true;
+  if (settings.repeatKo === 'never') return false;
+  return hf.on;
 }
 
 // 속도 사다리: 따라 하기를 2번 연속 성공하면 보통 속도, 아니면 천천히
@@ -744,12 +895,48 @@ function speakKo(text, onDone) {
 }
 
 // ---------- 7. 화면 그리기 ----------
+// 말풍선 + 시각(카톡처럼) 붙이기. 날짜가 바뀌면 날짜 구분선
+// 같은 사람이 같은 분에 연달아 말하면 마지막 말풍선에만 시각 표시
+var lastShown = null;
+function appendItem(item, waiting) {
+  var bubble = bubbleFor(item, waiting);
+  var ts = item.ts || 0;
+  if (ts) {
+    var dk = dayKeyOf(ts);
+    if (!lastShown || lastShown.dayKey !== dk) {
+      var div = document.createElement('div');
+      div.className = 'day-divider';
+      div.textContent = fmtDay(ts);
+      chatEl.appendChild(div);
+      lastShown = null;
+    }
+  }
+  var row = document.createElement('div');
+  row.className = 'msg-row ' + (item.role === 'user' ? 'me-row' : 'ai-row');
+  var timeEl = null;
+  if (ts) {
+    timeEl = document.createElement('span');
+    timeEl.className = 'time';
+    timeEl.textContent = fmtClock(ts);
+    var minute = Math.floor(ts / 60000);
+    if (lastShown && lastShown.role === item.role && lastShown.minute === minute && lastShown.timeEl) {
+      lastShown.timeEl.remove();
+    }
+  }
+  if (item.role === 'user') { if (timeEl) row.appendChild(timeEl); row.appendChild(bubble); }
+  else { row.appendChild(bubble); if (timeEl) row.appendChild(timeEl); }
+  chatEl.appendChild(row);
+  lastShown = ts ? { dayKey: dayKeyOf(ts), minute: Math.floor(ts / 60000), role: item.role, timeEl: timeEl } : lastShown;
+  return bubble;
+}
+
 function render() {
   chatEl.innerHTML = '';
+  lastShown = null;
   chatEl.classList.toggle('hide-ko', !settings.showKo);
   var shown = 0;
   for (var i = 0; i < chatLog.length; i++) {
-    if (!chatLog[i].hidden) { chatEl.appendChild(bubbleFor(chatLog[i], false)); shown++; }
+    if (!chatLog[i].hidden) { appendItem(chatLog[i], false); shown++; }
   }
   if (shown === 0 && !busy) {
     addSys(settings.key
@@ -963,6 +1150,7 @@ function updateTimeLeft() {
 // · 화면을 보고 있을 때만, 탭 여러 개여도 한 번만
 var TICK_MS = 1000;
 var lastTickAt = Date.now();
+var tickCount = 0;
 var userSpeaking = false;          // 마이크에 말소리가 들어오는 중
 var speechEventsWork = false;      // 이 브라우저가 '말소리 시작/끝' 신호를 주는지
 var goalNoticePending = false;     // 핸즈프리: 목표 달성 안내를 다음 쉬는 틈에
@@ -978,6 +1166,7 @@ setInterval(function () {
   var now = Date.now();
   var elapsed = Math.min(now - lastTickAt, 2000);   // 폰이 잠들었다 깨도 몰아서 더하지 않음
   lastTickAt = now;
+  if (++tickCount % 30 === 0) updateTimeLeft();   // 30초마다 표시 새로 (자정 넘김 등)
   if (!isTalkingNow()) return;
   // 이미 센 시간대(다른 탭이 센 것 포함)는 빼고 새로운 부분만 더함
   var u = getUsage();
@@ -1008,6 +1197,93 @@ setInterval(function () {
   }
 }, TICK_MS);
 
+// ---------- 8-1. 친구의 기억 (대화 요약) ----------
+var SUMMARY_EVERY = 8;          // 대화 8번마다 정리
+var summarizing = false;
+
+function isRealUserTurn(h) {
+  return h.role === 'user' && !h.local && !/^\[(시작|다시 만남|따라 말함|끝내기)/.test(String(h.text));
+}
+// 아직 기억에 안 들어간 대화
+function unsummarized() {
+  return chatLog.filter(function (h) {
+    return (h.role === 'ai' || (h.role === 'user' && !h.local)) && (h.ts || 0) > memory.upTo;
+  });
+}
+function maybeSummarize(force) {
+  if (summarizing || !settings.key) return;
+  var items = unsummarized();
+  var turns = items.filter(isRealUserTurn).length;
+  if (!turns) return;
+  if (!force && turns < SUMMARY_EVERY) return;
+  summarize(items);
+}
+
+function buildMemoryPrompt() {
+  var L = settings.lang;
+  var p = '너는 언어 연습 앱의 기억 정리 담당이야. 사용자(나)와 ' + L + ' 친구의 대화를 보고 다음 대화에 쓸 기억을 정리해.\n';
+  p += '[지금까지 기억]과 [새 대화]를 합쳐서 새 기억 전체를 다시 써. 반드시 JSON 하나만: {"memory": "..."}\n';
+  p += '규칙:\n';
+  p += '- 한국어로, 전체 700자 이내. 아래 세 부분을 이 제목 그대로.\n';
+  p += '- [나에 대해] 내가 직접 말한 사실만(가족·일·사는 곳·좋아하는 것·계획 등). 추측하지 마. 새 사실이 옛 사실과 다르면 새 것으로.\n';
+  p += '- [지난 이야기] 날짜와 함께 한 줄씩, 최근 것부터 최대 6줄. 오래된 건 합치거나 빼. 다음에 물어보면 좋을 것(예: 하려던 일)은 꼭 남겨.\n';
+  p += '- [연습 중] 자주 쓰거나 어려워한 ' + L + ' 표현 최대 5개.\n';
+  p += '- 주소·전화번호·비밀번호·계좌 같은 민감한 정보는 적지 마.\n';
+  return p;
+}
+
+async function summarize(items) {
+  summarizing = true;
+  try {
+    items = items.slice(-60);
+    var lines = [];
+    var upTo = memory.upTo;
+    for (var i = 0; i < items.length; i++) {
+      var h = items[i];
+      var when = h.ts ? '(' + fmtStamp(h.ts) + ') ' : '';
+      if (h.ts && h.ts > upTo) upTo = h.ts;
+      if (h.role === 'user') {
+        if (/^\[(시작|다시 만남)\]/.test(h.text)) continue;
+        lines.push(when + '나: ' + userSentence(h));
+      } else {
+        lines.push(when + '친구: ' + (h.say || h.ko) + (h.repeat ? ' / 따라 하기: ' + h.repeat : ''));
+      }
+    }
+    if (!lines.length) { summarizing = false; return; }
+    console.log('[기억] 정리 시작:', lines.length + '줄');
+    var raw = await callModel(buildMemoryPrompt(), [{
+      role: 'user',
+      content: '[지금까지 기억]\n' + (memory.text || '(없음)') + '\n\n[새 대화]\n' + lines.join('\n')
+    }], 900, 45000);
+    var text = '';
+    try {
+      var clean = String(raw).replace(/```json|```/g, '').trim();
+      text = String(JSON.parse(clean.slice(clean.indexOf('{'), clean.lastIndexOf('}') + 1)).memory || '');
+    } catch (e) {
+      text = String(raw || '').replace(/```json|```/g, '').trim();
+    }
+    if (text) {
+      memory.text = text.slice(0, 1500);
+      memory.upTo = Math.max(upTo, 0);
+      memory.updated = Date.now();
+      save('friend_memory', memory);
+      updateMemInfo();
+      console.log('[기억] 정리 완료');
+    }
+  } catch (e) {
+    console.log('[기억] 정리 실패(다음에 다시):', e && e.message);
+  }
+  summarizing = false;
+}
+
+function updateMemInfo() {
+  var el = $('memInfo');
+  if (!el) return;
+  el.textContent = memory.updated
+    ? '마지막 정리: ' + fmtStamp(memory.updated) + ' · 정리 안 된 대화 ' + unsummarized().filter(isRealUserTurn).length + '개'
+    : '아직 정리된 기억이 없어요.';
+}
+
 // ---------- 9. 문장 노트 ----------
 // 오늘 날짜를 숫자로 (복습 간격 계산용, 한국 시간 기준)
 function dayNum() {
@@ -1016,15 +1292,20 @@ function dayNum() {
 }
 var BOX_DAYS = [0, 1, 2, 4, 7, 14];   // 단계별 다음 복습까지 날수 (1단계=내일 … 5단계=2주 뒤)
 
+// 지금 배우는 언어의 노트만
+function myNotes() {
+  return notes.filter(function (n) { return n.lang === settings.lang; });
+}
+
 function addNote(text, ko) {
   if (!text) return;
   for (var i = 0; i < notes.length; i++) {
-    if (notes[i].text.toLowerCase() === text.toLowerCase()) {   // 같은 문장은 한 번만
+    if (notes[i].lang === settings.lang && notes[i].text.toLowerCase() === text.toLowerCase()) {   // 같은 문장은 한 번만
       if (!notes[i].ko && ko) { notes[i].ko = ko; save('friend_notes', notes); }
       return;
     }
   }
-  notes.push({ text: text, ko: ko || '', date: todayStr(), box: 1, due: dayNum() });
+  notes.push({ text: text, ko: ko || '', date: todayStr(), box: 1, due: dayNum(), lang: settings.lang });
   if (notes.length > 200) notes = notes.slice(-200);
   save('friend_notes', notes);
 }
@@ -1032,14 +1313,15 @@ function addNote(text, ko) {
 function renderNotes() {
   var list = $('noteList');
   list.innerHTML = '';
-  if (notes.length === 0) {
+  var mine = myNotes();
+  if (mine.length === 0) {
     var p = document.createElement('p');
     p.className = 'hint';
     p.textContent = '아직 모인 문장이 없어요. 친구가 "따라 해 볼까?" 하면 여기 쌓여요.';
     list.appendChild(p);
     return;
   }
-  for (var i = notes.length - 1; i >= 0; i--) {
+  for (var i = mine.length - 1; i >= 0; i--) {
     (function (n) {
       var row = document.createElement('div');
       row.className = 'note-item';
@@ -1060,16 +1342,17 @@ function renderNotes() {
       row.appendChild(box);
       row.appendChild(btn);
       list.appendChild(row);
-    })(notes[i]);
+    })(mine[i]);
   }
 }
 
 // 최근 5문장: 읽어 주고 3초 쉬기(그동안 따라 말하기)
 function reviewParts() {
-  var recent = notes.slice(-5);
+  var recent = myNotes().slice(-5);
   var code = langInfo().code;
   var parts = [];
   for (var i = 0; i < recent.length; i++) {
+    if (recent[i].ko && repeatMeaningOn()) parts.push({ text: recent[i].ko, code: 'ko-KR', rate: 1 }, { pause: 300 });
     parts.push({ text: recent[i].text, code: code, rate: targetRate() });
     parts.push({ pause: 3000 });
   }
@@ -1089,8 +1372,8 @@ async function send(text, opts) {
 
   busy = true;
   touch();
-  chatLog.push({ role: 'user', text: text, hidden: !!opts.hidden, display: opts.display || '' });
-  if (!opts.hidden) chatEl.appendChild(bubbleFor(chatLog[chatLog.length - 1]));
+  chatLog.push({ role: 'user', text: text, hidden: !!opts.hidden, display: opts.display || '', ts: Date.now() });
+  if (!opts.hidden) appendItem(chatLog[chatLog.length - 1]);
 
   var think = document.createElement('div');
   think.className = 'thinking';
@@ -1102,7 +1385,7 @@ async function send(text, opts) {
   var ok = true;
   try {
     var reply = await askAI();
-    var item = { role: 'ai', say: reply.say, ko: reply.ko, repeat: reply.repeat, repeat_ko: reply.repeat_ko, challenge: reply.challenge && !reply.say };
+    var item = { role: 'ai', say: reply.say, ko: reply.ko, repeat: reply.repeat, repeat_ko: reply.repeat_ko, challenge: reply.challenge && !reply.say, ts: Date.now() };
     // 다음에 내가 할 말이 '따라 하기'인지 '떠올리기'인지 기억
     pendingChallenge = !!item.challenge;
     pendingShadow = (settings.shadowCheck && item.repeat && !item.challenge) ? { text: item.repeat, ko: item.repeat_ko, tries: 0 } : null;
@@ -1110,11 +1393,12 @@ async function send(text, opts) {
     if (chatLog.length > 300) chatLog = chatLog.slice(-300);   // 기기 저장 공간 보호
     save('friend_history', chatLog);
     if (item.repeat) addNote(item.repeat, item.repeat_ko);
+    // 대화가 쌓이면 기억 정리 (끝내기는 바로)
+    maybeSummarize(/^\[끝내기/.test(text));
     think.remove();
 
     // 소리 먼저 → 글자 나중 (설정에 따라)
-    var bubble = bubbleFor(item, settings.soundFirst && !!synth);
-    chatEl.appendChild(bubble);
+    var bubble = appendItem(item, settings.soundFirst && !!synth);
     scrollDown();
     setOrb('speaking');
     busy = false;
@@ -1196,7 +1480,7 @@ function runCommand(cmd) {
     if (!parts.length) parts.push({ text: '아직 뜻을 알려 줄 문장이 없어.', code: 'ko-KR', rate: 1 });
     speakQueue(parts, afterSpeaking);
   } else if (cmd === 'review') {
-    if (!notes.length) { speakKo('아직 복습할 문장이 없어.', afterSpeaking); return; }
+    if (!myNotes().length) { speakKo('아직 복습할 문장이 없어.', afterSpeaking); return; }
     var rp = [{ text: '복습할게. 듣고 따라 말해 봐.', code: 'ko-KR', rate: 1 }].concat(reviewParts());
     rp.push({ text: '잘했어. 이야기 계속하자.', code: 'ko-KR', rate: 1 });
     speakQueue(rp, afterSpeaking);
@@ -1270,6 +1554,7 @@ function listen(holdRestart) {
     if (hf.on) stopHandsFree();
     return;
   }
+  if (busy && !hf.on) { addSys('친구가 생각 중이에요. 대답이 오면 말해 주세요.'); return; }
   if (busy || listening || recogStarting) return;   // 마이크는 절대 두 개 켜지 않음
   if (isOverTime()) {
     updateTimeLeft();
@@ -1372,6 +1657,12 @@ function handleSpoken(text) {
   recentUserLangs.push(/[가-힣]/.test(text) ? 'ko' : 'target');
   if (recentUserLangs.length > 5) recentUserLangs.shift();
 
+  // 따라 할 문장을 말한 거면 명령어("Wait!" 등)보다 따라 하기가 먼저
+  if (pendingShadow && similarity(text, pendingShadow.text) >= passLine()) {
+    checkShadow(text);
+    return;
+  }
+
   var cmd = detectCommand(text);
   if (cmd) { runCommand(cmd); return; }
 
@@ -1451,10 +1742,10 @@ function checkShadow(said) {
   console.log('[따라 하기] 비교:', said, '↔', target.text, '=', score.toFixed(2));
 
   // 내 말풍선 (점수는 보여 주지 않음)
-  var meItem = { role: 'user', text: said, display: '🔁 ' + said, local: true };   // local = 화면 기록용, AI엔 안 보냄
+  var meItem = { role: 'user', text: said, display: '🔁 ' + said, local: true, ts: Date.now() };   // local = 화면 기록용, AI엔 안 보냄
   chatLog.push(meItem);
   save('friend_history', chatLog);
-  chatEl.appendChild(bubbleFor(meItem));
+  appendItem(meItem);
   scrollDown();
 
   if (score >= passLine()) {
@@ -1495,7 +1786,7 @@ function awaitSpeech(langKey, cb) {
 
 function pickQuizItems() {
   var today = dayNum();
-  var pool = notes.filter(function (n) { return n.ko; });
+  var pool = myNotes().filter(function (n) { return n.ko; });
   var due = pool.filter(function (n) { return (n.due || 0) <= today; });
   if (!due.length) due = pool.slice();   // 오늘 낼 게 없으면 낮은 단계부터
   due.sort(function (a, b) { return (a.box || 1) - (b.box || 1) || (a.due || 0) - (b.due || 0); });
@@ -1536,7 +1827,9 @@ function quizAsk() {
 
 function quizAnswer(said) {
   if (!quiz) return;
-  var cmd = said ? detectCommand(said) : null;
+  // 정답이 명령어와 같을 수 있으니("Wait!") 맞았으면 명령어로 보지 않음
+  var isRight = !!said && similarity(said, quiz.items[quiz.i].text) >= passLine();
+  var cmd = (said && !isRight) ? detectCommand(said) : null;
   if (cmd === 'pause') { quiz = null; runCommand('pause'); return; }
   if (cmd === 'end') { quiz = null; addSys('퀴즈 그만'); speakKo('퀴즈 그만할게.', afterSpeaking); return; }
 
@@ -1573,6 +1866,18 @@ function quizEnd() {
 
 // 아무 말도 못 알아들었을 때
 function onNoResult(err) {
+  if (err === 'audio-capture') {
+    addSys('마이크를 쓸 수 없어요. 통화 중이거나 다른 앱이 마이크를 쓰고 있는지 확인해 주세요.');
+    if (hf.on) { pauseHandsFree(); speakKo('마이크를 쓸 수 없어서 잠깐 쉴게.'); }
+    pendingListen = null; quiz = null;
+    return;
+  }
+  if (err === 'language-not-supported') {
+    addSys('이 기기는 ' + (listenLangKey === 'ko' ? '한국어' : settings.lang) + ' 음성 인식을 지원하지 않아요. 아래 칸에 글로 써 주세요.');
+    if (hf.on) stopHandsFree();
+    pendingListen = null; quiz = null;
+    return;
+  }
   if (err === 'not-allowed' || err === 'service-not-allowed') {
     addSys('마이크가 막혀 있어요. 주소창 왼쪽 자물쇠에서 마이크를 허용해 주세요.');
     if (hf.on) stopHandsFree();
@@ -1726,6 +2031,7 @@ function startHandsFree() {
     if (!hf.on) return;
     var last = lastAiItem();
     if (!hasVisible || !last) send('[시작]', { hidden: true });
+    else if (lastMessageTs() && Date.now() - lastMessageTs() >= SESSION_GAP_MS) send('[다시 만남]', { hidden: true });   // 시각 모르는 옛 기록은 제외   // 오랜만 → 친구가 먼저 반갑게
     else speakReply(last, afterSpeaking);   // 하던 이야기 다시 들려주고 이어 가기
   });
 }
@@ -1752,6 +2058,17 @@ function toggleHandsFreePause() {
   if (hf.paused) resumeHandsFree(); else { stopSpeaking(); pauseHandsFree(); }
 }
 
+// 연습 중이던 상태 모두 비우기 (언어 바꿈·대화 지움)
+function resetPractice() {
+  pendingShadow = null;
+  pendingChallenge = false;
+  pendingListen = null;
+  quiz = null;
+  shadowStreak = 0;
+  recentUserLangs = [];
+  hf.forceKo = false;
+}
+
 function stopHandsFree() {
   quiz = null;
   pendingListen = null;
@@ -1763,11 +2080,16 @@ function stopHandsFree() {
   stopMediaKeys();
   $('drive').classList.remove('open');
   console.log('[핸즈프리] 끝');
-  render();
+  // 화면을 다시 그리지 않음 → 방금 띄운 안내(마이크 오류 등)가 지워지지 않게
+  // (핸즈프리 중에도 말풍선은 화면에 계속 쌓여 있음)
+  var hidden = document.querySelectorAll('.waiting');
+  for (var i = 0; i < hidden.length; i++) hidden[i].classList.remove('waiting');
+  scrollDown();
 }
 
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState === 'hidden') {
+    if (unsummarized().filter(isRealUserTurn).length >= 2) maybeSummarize(true);   // 앱 나갈 때 정리
     if (hold.pressed) { console.log('[듣기] 화면 벗어남 → 손 뗀 것으로'); micRelease(); }
     if (!hf.on && listening) stopListening();
   }
@@ -1821,10 +2143,13 @@ function openSheet() {
   $('s_repeat').value = settings.repeat;
   $('s_minutes').value = settings.minutes;
   $('s_lock').checked = settings.lockAfter;
+  $('s_memory').value = memory.text;
+  updateMemInfo();
   $('s_rate').value = settings.rate;
   $('s_showKo').checked = settings.showKo;
   $('s_soundFirst').checked = settings.soundFirst;
   $('s_hfKo').checked = settings.hfKo;
+  $('s_repeatKo').value = settings.repeatKo;
   $('s_shadow').checked = settings.shadowCheck;
   $('s_koTiming').value = settings.koTiming;
   $('s_recall').checked = settings.recall;
@@ -1855,11 +2180,17 @@ function saveSheet() {
   settings.repeat = $('s_repeat').value;
   settings.minutes = Math.min(180, Math.max(5, Number($('s_minutes').value) || 15));
   settings.lockAfter = $('s_lock').checked;
+  if ($('s_memory').value.trim() !== memory.text.trim()) {   // 내가 직접 고친 기억
+    memory.text = $('s_memory').value.trim().slice(0, 1500);
+    memory.updated = Date.now();
+    save('friend_memory', memory);
+  }
   settings.rate = Math.min(1.2, Math.max(0.6, Number($('s_rate').value) || 0.88));
   settings.voice = $('s_voice').value;
   settings.showKo = $('s_showKo').checked;
   settings.soundFirst = $('s_soundFirst').checked;
   settings.hfKo = $('s_hfKo').checked;
+  settings.repeatKo = $('s_repeatKo').value;
   settings.shadowCheck = $('s_shadow').checked;
   settings.koTiming = $('s_koTiming').value;
   settings.recall = $('s_recall').checked;
@@ -1871,10 +2202,12 @@ function saveSheet() {
   console.log('[설정] 저장 완료:', settings.lang, settings.provider);
 
   // 언어를 바꿨으면 대화 새로 시작 (노트는 남김)
-  if (oldLang !== settings.lang && chatLog.length) {
-    chatLog = [];
-    recentUserLangs = [];
-    save('friend_history', chatLog);
+  if (oldLang !== settings.lang) {
+    resetPractice();
+    if (chatLog.length) {
+      chatLog = [];
+      save('friend_history', chatLog);
+    }
   }
 
   closeSheet();
@@ -1894,13 +2227,42 @@ $('openSettings').addEventListener('click', openSheet);
 $('sheetBg').addEventListener('click', function (e) { if (e.target === $('sheetBg')) closeSheet(); });
 $('saveSettings').addEventListener('click', saveSheet);
 $('s_provider').addEventListener('change', function () {
-  $('s_model').placeholder = DEFAULT_MODEL[$('s_provider').value];
+  var pv = $('s_provider').value;
+  $('s_model').placeholder = DEFAULT_MODEL[pv];
+  var m = $('s_model').value.trim().toLowerCase();
+  var fits = { gemini: /^gemini|^gemma/, openai: /^(gpt|o\d|chatgpt)/, claude: /^claude/ }[pv];
+  if (m && fits && !fits.test(m)) {
+    $('s_model').value = '';   // 다른 회사 모델 이름은 지움 → 기본값 사용
+    console.log('[설정] 다른 AI의 모델 이름이라 비움:', m);
+  }
 });
 $('s_lang').addEventListener('change', function () { $('s_voice').value = ''; fillVoiceSelect(); });
+$('memNow').addEventListener('click', function () {
+  var n = unsummarized().filter(isRealUserTurn).length;
+  if (!n) { $('memInfo').textContent = '새로 정리할 대화가 없어요.'; return; }
+  $('memInfo').textContent = '정리하는 중…';
+  var t0 = memory.updated;
+  maybeSummarize(true);
+  var wait = setInterval(function () {
+    if (!summarizing) {
+      clearInterval(wait);
+      $('s_memory').value = memory.text;
+      if (memory.updated === t0) $('memInfo').textContent = '정리하지 못했어요. 인터넷·키를 확인해 주세요.';
+      else updateMemInfo();
+    }
+  }, 300);
+});
+$('memClear').addEventListener('click', function () {
+  if (!window.confirm('친구의 기억을 지울까요? (대화 기록은 남아요)')) return;
+  memory = { text: '', upTo: lastMessageTs() || Date.now(), updated: 0 };   // 지금까지 대화는 다시 정리하지 않음
+  save('friend_memory', memory);
+  $('s_memory').value = '';
+  updateMemInfo();
+});
 $('clearChat').addEventListener('click', function () {
   if (!window.confirm('대화 기록을 모두 지울까요? (문장 노트는 남아요)')) return;
   chatLog = [];
-  recentUserLangs = [];
+  resetPractice();
   save('friend_history', chatLog);
   closeSheet();
   render();
@@ -1910,11 +2272,11 @@ $('openNotes').addEventListener('click', function () { renderNotes(); $('notesBg
 $('notesBg').addEventListener('click', function (e) { if (e.target === $('notesBg')) $('notesBg').classList.remove('open'); });
 $('startQuiz').addEventListener('click', function () { startQuiz(); });
 $('playAllNotes').addEventListener('click', function () {
-  if (notes.length) speakQueue(reviewParts());
+  if (myNotes().length) speakQueue(reviewParts());
 });
 $('clearNotes').addEventListener('click', function () {
-  if (!window.confirm('문장 노트를 모두 지울까요?')) return;
-  notes = [];
+  if (!window.confirm(settings.lang + ' 문장 노트를 모두 지울까요?')) return;
+  notes = notes.filter(function (n) { return n.lang !== settings.lang; });   // 다른 언어 노트는 남김
   save('friend_notes', notes);
   renderNotes();
 });
@@ -2014,6 +2376,12 @@ $('langToggle').addEventListener('click', function () {
 $('sendBtn').addEventListener('click', function () {
   var t = $('textInput').value.trim();
   if (!t) return;
+  if (busy) {   // 친구가 대답하는 중 → 글은 그대로 두고 안내
+    if (!$('textInput').dataset.warned) addSys('친구가 대답하는 중이에요. 대답이 오면 보내기를 눌러 주세요.');
+    $('textInput').dataset.warned = '1';
+    return;
+  }
+  $('textInput').dataset.warned = '';
   $('textInput').value = '';
   // 글로 쓴 건 [쓰기] 표시를 붙여서 AI가 부드럽게 고쳐 주게 함
   pendingShadow = null;
@@ -2035,19 +2403,25 @@ $('orb').addEventListener('click', toggleHandsFreePause);
 // 디버깅용: 브라우저 콘솔에서 TalkFriend.xxx 로 확인 가능
 window.TalkFriend = {
   parseReply: parseReply, detectCommand: detectCommand, buildSystemPrompt: buildSystemPrompt,
-  similarity: similarity, startQuiz: startQuiz, splitSegments: splitSegments, joinChunks: joinChunks, notes: function () { return notes; },
+  similarity: similarity, startQuiz: startQuiz, splitSegments: splitSegments, joinChunks: joinChunks,
+  apiMessages: apiMessages, memory: function () { return memory; }, maybeSummarize: maybeSummarize, notes: function () { return notes; },
   chooseListenLang: chooseListenLang, state: function () {
-    return { hf: hf, busy: busy, listening: listening, micMode: settings.micMode, log: chatLog.length, notes: notes.length, rate: settings.rate };
+    return { hf: hf, busy: busy, listening: listening, micMode: settings.micMode, log: chatLog.length, notes: notes.length, rate: settings.rate, pendingShadow: pendingShadow, quiz: quiz };
   }
 };
 
 // ---------- 16. 시작 ----------
-console.log('[시작] AI 회화 친구 v0.5 열림 / 주소:', location.protocol, '/ 보안 주소:', !isInsecure());
+console.log('[시작] AI 회화 친구 v0.6.2 열림 / 주소:', location.protocol, '/ 보안 주소:', !isInsecure());
 fillLangSelect();
 updateHeader();
 updateTimeLeft();
 render();
 if (isInsecure()) addSys('⚠️ ' + INSECURE_MSG);
+// 오랜만에 열었으면: 지난 대화 정리 + 안내
+if (settings.key && lastMessageTs() && Date.now() - lastMessageTs() >= SESSION_GAP_MS) {
+  maybeSummarize(true);
+  addSys('👋 ' + fmtGap(Date.now() - lastMessageTs()) + '이에요. 마이크를 누르거나 🚗 핸즈프리로 이어서 이야기해요.');
+}
 if (!load('friend_tap_tip', false) && chatLog.some(function (h) { return h.role === 'ai'; })) {
   addSys('💡 말풍선을 누르면 다시 들려줘요. 따라 하기 칸만 누르면 그 문장만 천천히.');
   save('friend_tap_tip', true);

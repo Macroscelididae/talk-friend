@@ -222,9 +222,12 @@ button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touc
     <div class="two">
       <label class="field">따라 말하기
         <select id="s_repeat"><option>적게</option><option>보통</option><option>많이</option></select></label>
-      <label class="field">하루 시간(분)
+      <label class="field">하루 목표(분)
         <input id="s_minutes" type="number" min="5" max="180" placeholder="15"></label>
     </div>
+
+    <label class="check"><input type="checkbox" id="s_lock"> 목표 시간이 지나면 잠그기 (아이용)</label>
+    <p class="hint">시간은 친구가 말하는 동안과 내가 말하는 동안만 세요.</p>
 
     <h3>듣기·보기</h3>
     <div class="two">
@@ -316,7 +319,7 @@ var DEFAULT_SETTINGS = {
   name: 'Emma', persona: '차분하고 다정함', repeat: '보통', minutes: 15,
   rate: 0.88, voice: '', showKo: true, soundFirst: true,
   hfKo: true, mediaKeys: true, micMode: 'auto',
-  shadowCheck: true, koTiming: 'delay', recall: false,
+  shadowCheck: true, koTiming: 'delay', recall: false, lockAfter: false,
   provider: 'gemini', key: '', model: ''
 };
 
@@ -373,7 +376,7 @@ notes = notes.filter(function (n) { return n && n.text; });
 notes.forEach(function (n) { if (!n.box) { n.box = 1; n.due = 0; } });
 
 var busy = false;
-var lastActivity = 0;            // 마지막으로 말하거나 들은 시각 (시간 제한 계산용)
+var lastActivity = 0;            // 마지막으로 말하거나 들은 시각 (기록용)
 var recentUserLangs = [];        // 내가 최근에 어떤 언어로 말했는지 ['ko','target',...]
 
 // 핸즈프리 상태
@@ -417,7 +420,7 @@ function buildSystemPrompt() {
   p += '- 배울 언어: ' + L + '\n';
   p += '- 지금 수준: ' + settings.level + '\n';
   p += '- 좋아하는 것: ' + (settings.likes || '아직 모름') + '\n';
-  p += '- 하루에 쓸 시간: ' + settings.minutes + '분\n';
+  p += '- 하루 목표 시간: ' + settings.minutes + '분\n';
   p += '- 친구 이름·성격: ' + N + ', ' + (settings.persona || '다정함') + '\n';
   p += '- 따라 말하기: ' + settings.repeat + '\n\n';
 
@@ -928,55 +931,80 @@ function getUsage() {
   if (!u || u.date !== todayStr()) u = { date: todayStr(), seconds: 0 };
   return u;
 }
-function minutesLeft() {
-  var limit = Number(settings.minutes) || 15;
-  return Math.max(0, Math.ceil(limit - getUsage().seconds / 60));
-}
-function isOverTime() { return minutesLeft() <= 0; }
-function updateTimeLeft() {
-  var over = isOverTime();
-  $('timeLeft').textContent = '오늘 남은 시간 ' + minutesLeft() + '분';
-  $('mic').disabled = over;
-  $('sendBtn').disabled = over;
-  $('hfBtn').disabled = over;
-  return over;
-}
-// 실제로 쓰는 시간만 셈
-// · 화면을 보고 있을 때만 (다른 앱·화면 꺼짐·다른 탭이면 안 셈)
-// · 말하는 중 / 듣는 중 / AI 생각 중, 또는 마지막 대화 후 20초(읽는 시간)까지만
-// · 같은 앱을 탭 두 개로 열어도 두 배로 세지 않음
-var TICK_MS = 5000;
-var IDLE_GRACE_MS = 20000;
-var lastTickAt = Date.now();
+function goalSeconds() { return (Number(settings.minutes) || 15) * 60; }
+function goalReached() { return getUsage().seconds >= goalSeconds(); }
 
-function isInUse() {
+// 잠금은 '잠그기'를 켠 경우에만 (기본은 목표가 지나도 계속 사용)
+function isOverTime() { return !!settings.lockAfter && goalReached(); }
+
+function fmtTime(sec) {
+  sec = Math.floor(sec);
+  var m = Math.floor(sec / 60), s2 = sec % 60;
+  return m + '분 ' + (s2 < 10 ? '0' : '') + s2 + '초';
+}
+
+// 아래 줄 표시: 오늘 실제 대화 시간 / 목표
+function updateTimeLeft() {
+  var used = getUsage().seconds;
+  var label = goalReached()
+    ? '🎉 오늘 목표 달성 · 대화 ' + fmtTime(used)
+    : '오늘 대화 ' + fmtTime(used) + ' / 목표 ' + (Number(settings.minutes) || 15) + '분';
+  if ($('timeLeft').textContent !== label) $('timeLeft').textContent = label;
+  var locked = isOverTime();
+  $('mic').disabled = locked;
+  $('sendBtn').disabled = locked;
+  $('hfBtn').disabled = locked;
+  return locked;
+}
+
+// ===== 실제 대화 시간만 셈 =====
+// · 친구가 말하는 동안 (말 사이 쉼은 제외)
+// · 내가 말하는 동안 (마이크가 켜져 있어도 조용하면 제외)
+// · 화면을 보고 있을 때만, 탭 여러 개여도 한 번만
+var TICK_MS = 1000;
+var lastTickAt = Date.now();
+var userSpeaking = false;          // 마이크에 말소리가 들어오는 중
+var speechEventsWork = false;      // 이 브라우저가 '말소리 시작/끝' 신호를 주는지
+var goalNoticePending = false;     // 핸즈프리: 목표 달성 안내를 다음 쉬는 틈에
+
+function isTalkingNow() {
   if (document.visibilityState === 'hidden') return false;
-  if (listening || busy) return true;
-  if ($('face').classList.contains('talking')) return true;
-  return Date.now() - lastActivity < IDLE_GRACE_MS;
+  if ($('face').classList.contains('talking')) return true;   // 친구가 말하는 중
+  if (listening) return speechEventsWork ? userSpeaking : true; // 신호를 못 주는 브라우저는 듣는 시간 전체
+  return false;
 }
 
 setInterval(function () {
   var now = Date.now();
-  var elapsed = Math.min(now - lastTickAt, TICK_MS);   // 폰이 잠들었다 깨도 몰아서 더하지 않음
+  var elapsed = Math.min(now - lastTickAt, 2000);   // 폰이 잠들었다 깨도 몰아서 더하지 않음
   lastTickAt = now;
-  if (!isInUse()) return;
+  if (!isTalkingNow()) return;
   // 이미 센 시간대(다른 탭이 센 것 포함)는 빼고 새로운 부분만 더함
   var u = getUsage();
+  var wasReached = u.seconds >= goalSeconds();
   var from = Math.max(now - elapsed, u.coveredUntil || 0);
   if (from >= now) return;
   u.seconds += (now - from) / 1000;
   u.coveredUntil = now;
+
+  // 목표 달성: 하루 한 번 축하만 하고 계속 사용 (잠그기 켰을 때만 잠금)
+  var justReached = !wasReached && u.seconds >= goalSeconds() && u.notified !== u.date;
+  if (justReached) u.notified = u.date;
   save('friend_usage', u);
-  var wasOver = $('mic').disabled;
-  if (updateTimeLeft() && !wasOver) {
-    console.log('[시간] 오늘 시간 다 씀');
+  updateTimeLeft();
+  if (!justReached) return;
+
+  console.log('[시간] 오늘 목표 달성');
+  if (settings.lockAfter) {
     if (hf.on) {
       stopListening();
       speakKo('오늘 시간이 다 됐어. 내일 또 하자.', function () { stopHandsFree(); });
     } else {
       addSys('오늘 시간이 다 됐어요. 내일 또 만나요! 👋');
     }
+  } else {
+    addSys('🎉 오늘 목표 ' + settings.minutes + '분 달성! 더 해도 돼요.');
+    if (hf.on) goalNoticePending = true;   // 말 끊지 않고 다음 차례에 알려 줌
   }
 }, TICK_MS);
 
@@ -1113,6 +1141,11 @@ async function send(text, opts) {
 
 // 친구가 말을 다 하면: 핸즈프리면 바로 듣기
 function afterSpeaking() {
+  if (goalNoticePending && hf.on && !hf.paused) {
+    goalNoticePending = false;
+    speakKo('오늘 목표 채웠어! 더 하고 싶으면 계속하자.', afterSpeaking);
+    return;
+  }
   if (hf.on && !hf.paused) {
     setTimeout(function () { if (hf.on && !hf.paused) listen(); }, 250);
   }
@@ -1191,6 +1224,7 @@ function runCommand(cmd) {
 var Recog = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 var recog = null;
 var listening = false;
+var recogStarting = false;   // start()를 불렀지만 아직 켜지기 전 (찰나)
 var listenLangKey = 'ko';
 
 // 이번에 어느 언어로 들을지 정하기 (자동 모드)
@@ -1214,13 +1248,13 @@ var INSECURE_MSG = '지금 주소(' + location.protocol + '//)에서는 크롬�
 
 // 내가 버튼으로 멈출 때: stop()은 지금까지 말한 걸 살려서 보내 줌 (abort는 버림)
 function finishListening() {
-  if (recog && listening) {
+  if (recog && (listening || recogStarting)) {
     try { recog.stop(); } catch (e) {}
   }
 }
 
 function stopListening() {
-  if (recog && listening) {
+  if (recog && (listening || recogStarting)) {
     try { recog.abort(); } catch (e) {}
   }
 }
@@ -1236,7 +1270,7 @@ function listen(holdRestart) {
     if (hf.on) stopHandsFree();
     return;
   }
-  if (busy || listening) return;
+  if (busy || listening || recogStarting) return;   // 마이크는 절대 두 개 켜지 않음
   if (isOverTime()) {
     updateTimeLeft();
     if (hf.on) speakKo('오늘 시간이 다 됐어. 내일 또 하자.', function () { stopHandsFree(); });
@@ -1256,6 +1290,7 @@ function listen(holdRestart) {
     recog.maxAlternatives = 1;
 
     recog.onstart = function () {
+      recogStarting = false;
       listening = true;   // 듣는 동안은 사용 시간으로 셈 (끝난 뒤 여유 시간은 실제로 말했을 때만)
       $('mic').classList.add('on');
       $('mic').textContent = hold.active ? '👂 듣는 중 (손 떼면 보내기)' : '👂 듣는 중 (누르면 멈춤)';
@@ -1287,12 +1322,18 @@ function listen(holdRestart) {
         }
       }
     };
+    // 이 브라우저가 '말소리 시작/끝' 신호를 지원하면 처음부터 그 신호로만 셈
+    if ('onspeechstart' in recog) speechEventsWork = true;
+    recog.onspeechstart = function () { speechEventsWork = true; userSpeaking = true; };
+    recog.onspeechend = function () { userSpeaking = false; };
     recog.onerror = function (ev) {
       lastError = ev.error || '';
       console.log('[듣기] 오류:', lastError);
     };
     recog.onend = function () {
+      recogStarting = false;
       listening = false;
+      userSpeaking = false;
       // 누르고 있는데 인식이 혼자 꺼짐(말 사이 쉼) → 바로 다시 켬
       // 안전장치: 손 뗀 신호를 놓쳐도 끝없이 다시 켜지 않게
       if (hold.pressed && (Date.now() - hold.startAt > HOLD_MAX_MS || Date.now() - hold.lastHeardAt > HOLD_SILENCE_MS)) {
@@ -1314,6 +1355,7 @@ function listen(holdRestart) {
       if (hold.active) { finishHold(); return; }   // 손 뗀 뒤 마지막 조각까지 받음
       if (!got) onNoResult(lastError);
     };
+    recogStarting = true;
     recog.start();
   } catch (e) {
     console.log('[듣기] 시작 실패:', e);
@@ -1778,6 +1820,7 @@ function openSheet() {
   $('s_persona').value = settings.persona;
   $('s_repeat').value = settings.repeat;
   $('s_minutes').value = settings.minutes;
+  $('s_lock').checked = settings.lockAfter;
   $('s_rate').value = settings.rate;
   $('s_showKo').checked = settings.showKo;
   $('s_soundFirst').checked = settings.soundFirst;
@@ -1811,6 +1854,7 @@ function saveSheet() {
   settings.persona = $('s_persona').value.trim();
   settings.repeat = $('s_repeat').value;
   settings.minutes = Math.min(180, Math.max(5, Number($('s_minutes').value) || 15));
+  settings.lockAfter = $('s_lock').checked;
   settings.rate = Math.min(1.2, Math.max(0.6, Number($('s_rate').value) || 0.88));
   settings.voice = $('s_voice').value;
   settings.showKo = $('s_showKo').checked;
@@ -1887,7 +1931,7 @@ var HOLD_SILENCE_MS = 15000;  // 15초 동안 아무 말도 안 들리면 자동
 $('mic').addEventListener('pointerdown', function (e) {
   if ($('mic').disabled) return;
   e.preventDefault();
-  if (listening && !hold.active) { finishListening(); return; }   // 듣는 중 탭 → 거기까지 보내기
+  if ((listening || recogStarting) && !hold.active) { finishListening(); return; }   // 켜지는 중이어도 '듣는 중'으로   // 듣는 중 탭 → 거기까지 보내기
   hold.pressed = true;
   hold.active = false;
   hold.buffer = [];
@@ -1910,8 +1954,12 @@ function micRelease() {
   clearTimeout(hold.timer);
   if (!hold.active) return;   // 짧은 탭이었음 → 말 끝나면 알아서 멈춤
   console.log('[듣기] 손 뗌 → 모은 말 보내기');
-  if (listening) finishListening();   // 마지막 조각 받고 onend에서 finishHold
-  else finishHold();                  // 다시 켜는 사이에 뗌
+  if (listening || recogStarting) {
+    // 켜져 있거나 막 켜지는 중인 마이크도 끔 → 마지막 조각 받고 onend에서 finishHold
+    try { recog.stop(); } catch (e) { finishHold(); }
+  } else {
+    finishHold();                     // 다시 켜는 사이(마이크 없음)에 뗌
+  }
 }
 window.addEventListener('pointerup', micRelease);
 window.addEventListener('touchend', micRelease);
@@ -1994,7 +2042,7 @@ window.TalkFriend = {
 };
 
 // ---------- 16. 시작 ----------
-console.log('[시작] AI 회화 친구 v0.4.3 열림 / 주소:', location.protocol, '/ 보안 주소:', !isInsecure());
+console.log('[시작] AI 회화 친구 v0.5 열림 / 주소:', location.protocol, '/ 보안 주소:', !isInsecure());
 fillLangSelect();
 updateHeader();
 updateTimeLeft();

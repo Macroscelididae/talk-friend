@@ -32,6 +32,7 @@ try:
     import koreanize_matplotlib  # 그래프 한글 깨짐 방지 (없어도 실행됨)
 except Exception:
     pass
+plt.rcParams["axes.unicode_minus"] = False   # 축의 마이너스(−) 기호 깨짐 방지
 
 TICKERS = {"x1": "229200",    # KODEX 코스닥150 (1배) — 신호 계산 + 매매
            "x2": "233740",    # KODEX 코스닥150레버리지 (2배)
@@ -131,6 +132,9 @@ for key in dfs:
     n_big = int((r > 0.25).sum())
     if n_big > 0:
         print(f"  ⚠️ {TICKERS[key]}: 하루 ±25% 넘는 날 {n_big}일 → 액면분할/데이터 오류 확인 필요")
+        big_days = dfs[key]["Close"].pct_change()[r > 0.25]
+        for day, chg in big_days.items():
+            print(f"     {day.date()} 변동률 {chg:+.1%}")
 
 
 # %% [셀 4] 기본 특징 & 미래수익률 & 리스크 지표
@@ -565,6 +569,8 @@ while start + TRAIN_DAYS < N:
     a = start
     b = start + TRAIN_DAYS
     e = min(b + TEST_DAYS, N)
+    if e - b < 60:          # 검증일이 60일 미만이면 IC 계산이 무의미 → 마지막 자투리 폴드 생략
+        break
     fold += 1
     print(f"\n[폴드 {fold}] 학습 {DATES[a].date()}~{DATES[b - 1].date()} | 검증 {DATES[b].date()}~{DATES[e - 1].date()}")
     try:
